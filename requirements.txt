@@ -12,6 +12,9 @@ faster-whisper>=1.0.3
 faiss-cpu>=1.8.0
 sentence-transformers>=3.0.0
 
+# OpenRouter / OpenAI-compatible SDK
+openai>=1.35.0
+
 # WebSocket server (used in Docker / WS_MODE=true)
 websockets>=12.0
 

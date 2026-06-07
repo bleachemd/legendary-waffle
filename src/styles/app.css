@@ -230,6 +230,60 @@ body {
   font-style: italic;
 }
 
+/* ── Reasoning (model thinking) ── */
+.reasoning-section {
+  border-bottom: 1px solid var(--border);
+}
+
+.reasoning-header {
+  cursor: pointer;
+  gap: 6px;
+}
+
+.reasoning-header:hover {
+  color: var(--text);
+}
+
+.reasoning-toggle {
+  font-size: 9px;
+  color: var(--text-muted);
+  width: 10px;
+  flex-shrink: 0;
+}
+
+.reasoning-pulse {
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--warning);
+  animation: pulse 0.9s ease-in-out infinite;
+  margin-left: 2px;
+  flex-shrink: 0;
+}
+
+.reasoning-body {
+  padding: 6px 12px 8px 22px;
+  max-height: 120px;
+  overflow-y: auto;
+  font-size: 11px;
+  line-height: 1.55;
+  color: var(--text-muted);
+  font-style: italic;
+  white-space: pre-wrap;
+  word-break: break-word;
+  border-top: 1px solid var(--border);
+}
+
+.reasoning-body::-webkit-scrollbar {
+  width: 3px;
+}
+
+.reasoning-body::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 2px;
+}
+
 /* ── Answer ── */
 .answer-body {
   padding: 8px 12px 12px;

@@ -18,6 +18,9 @@ export default function Overlay() {
   const [status, setStatus] = useState<AppStatus>('idle')
   const [statusText, setStatusText] = useState('Нажмите Ctrl+Shift+R для записи')
   const [transcript, setTranscript] = useState<TranscriptLine[]>([])
+  const [reasoning, setReasoning] = useState('')
+  const [reasoningOpen, setReasoningOpen] = useState(false)
+  const [streamingReasoning, setStreamingReasoning] = useState(false)
   const [answer, setAnswer] = useState('')
   const [streaming, setStreaming] = useState(false)
   const [clickThrough, setClickThrough] = useState(false)
@@ -27,44 +30,49 @@ export default function Overlay() {
 
   const transcriptEndRef = useRef<HTMLDivElement>(null)
   const answerEndRef = useRef<HTMLDivElement>(null)
+  const reasoningEndRef = useRef<HTMLDivElement>(null)
   const sendToPython = useSendToPython()
 
-  // ── Message handler from Python backend ─────────────────────────────────
+  // ── Message handler ──────────────────────────────────────────────────────
 
   const handleMessage = useCallback((msg: PythonMessage) => {
     switch (msg.type) {
+
       case 'transcript': {
         setTranscript((prev) => {
-          // find an existing non-final line for this speaker to update
           const lastIdx = [...prev].reverse().findIndex(
             (l) => l.speaker === msg.speaker && !l.final
           )
           if (lastIdx !== -1) {
             const realIdx = prev.length - 1 - lastIdx
             const updated = [...prev]
-            updated[realIdx] = {
-              ...updated[realIdx],
-              text: msg.text,
-              final: msg.final,
-            }
+            updated[realIdx] = { ...updated[realIdx], text: msg.text, final: msg.final }
             return updated
           }
-          // new line
-          return [
-            ...prev,
-            { id: ++lineIdCounter, speaker: msg.speaker, text: msg.text, final: msg.final },
-          ]
+          return [...prev, { id: ++lineIdCounter, speaker: msg.speaker, text: msg.text, final: msg.final }]
         })
-
         if (msg.final) {
           setStatus('processing')
-          setStatusText('Генерирую ответ…')
+          setStatusText('Рассуждаю…')
+          // reset previous reasoning/answer for the new question
+          setReasoning('')
+          setAnswer('')
+          setReasoningOpen(true)
         }
         break
       }
 
+      case 'reasoning_token': {
+        setStreamingReasoning(true)
+        setReasoning((prev) => prev + msg.token)
+        break
+      }
+
       case 'llm_token': {
+        // first content token means reasoning finished
+        setStreamingReasoning(false)
         setStreaming(true)
+        setStatusText('Генерирую ответ…')
         setAnswer((prev) => prev + msg.token)
         break
       }
@@ -111,16 +119,14 @@ export default function Overlay() {
 
     const cleanupClear = window.electronAPI.onClearSession(() => {
       setTranscript([])
+      setReasoning('')
       setAnswer('')
       setStatus('idle')
       setStatusText('Очищено')
+      sendToPython({ type: 'clear_session' })
     })
 
-    return () => {
-      cleanupCT()
-      cleanupRec()
-      cleanupClear()
-    }
+    return () => { cleanupCT(); cleanupRec(); cleanupClear() }
   }, [recording])
 
   // ── Auto-scroll ──────────────────────────────────────────────────────────
@@ -132,6 +138,12 @@ export default function Overlay() {
   useEffect(() => {
     answerEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [answer])
+
+  useEffect(() => {
+    if (reasoningOpen) {
+      reasoningEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    }
+  }, [reasoning, reasoningOpen])
 
   // ── Actions ──────────────────────────────────────────────────────────────
 
@@ -183,7 +195,7 @@ export default function Overlay() {
 
   // ── Render ───────────────────────────────────────────────────────────────
 
-  const statusDotClass = `status-dot ${status}`
+  const hasReasoning = reasoning.length > 0
 
   return (
     <div className="overlay">
@@ -191,12 +203,10 @@ export default function Overlay() {
       {/* Title bar */}
       <div className="titlebar">
         <div className="titlebar-left">
-          <div className={statusDotClass} title={statusText} />
+          <div className={`status-dot ${status}`} title={statusText} />
           <span className="app-name">Copilot</span>
         </div>
-
         <div className="titlebar-controls">
-          {/* Record toggle */}
           <button
             className={`icon-btn ${recording ? 'active' : ''}`}
             onClick={handleRecordToggle}
@@ -204,22 +214,20 @@ export default function Overlay() {
           >
             {recording ? '⏹' : '⏺'}
           </button>
-
-          {/* Click-through toggle */}
           <button
             className={`icon-btn ${clickThrough ? 'active' : ''}`}
             onClick={handleClickThrough}
             title="Режим прозрачности (Ctrl+Shift+P)"
           >
-            {clickThrough ? '🖱' : '🖱'}
+            ⊙
           </button>
-
-          {/* Clear */}
           <button
             className="icon-btn"
             onClick={() => {
               setTranscript([])
+              setReasoning('')
               setAnswer('')
+              sendToPython({ type: 'clear_session' })
             }}
             title="Очистить (Ctrl+Shift+C)"
           >
@@ -228,16 +236,15 @@ export default function Overlay() {
         </div>
       </div>
 
-      {/* Click-through notice */}
       {clickThrough && (
         <div className="click-through-banner">
-          Режим прозрачности — <kbd className="kbd">Ctrl+Shift+P</kbd> для выхода
+          Режим прозрачности — <span className="kbd">Ctrl+Shift+P</span> для выхода
         </div>
       )}
 
       <div className="sections">
 
-        {/* RAG / Context */}
+        {/* RAG */}
         <div className="section">
           <div className="section-header">
             Контекст
@@ -248,17 +255,13 @@ export default function Overlay() {
               <span className={`rag-file-name ${resumeName ? '' : 'empty'}`}>
                 {resumeName ?? 'Резюме не загружено'}
               </span>
-              <button className="upload-btn" onClick={handleUploadResume}>
-                Загрузить
-              </button>
+              <button className="upload-btn" onClick={handleUploadResume}>Загрузить</button>
             </div>
             <div className="rag-file-row">
               <span className={`rag-file-name ${jdName ? '' : 'empty'}`}>
                 {jdName ?? 'Вакансия не загружена'}
               </span>
-              <button className="upload-btn" onClick={handleUploadJD}>
-                Загрузить
-              </button>
+              <button className="upload-btn" onClick={handleUploadJD}>Загрузить</button>
             </div>
           </div>
         </div>
@@ -287,20 +290,44 @@ export default function Overlay() {
           </div>
         </div>
 
+        {/* Reasoning (collapsible) — only shown when the model is thinking */}
+        {hasReasoning && (
+          <div className="section reasoning-section">
+            <div
+              className="section-header reasoning-header"
+              onClick={() => setReasoningOpen((o) => !o)}
+            >
+              <span className="reasoning-toggle">{reasoningOpen ? '▾' : '▸'}</span>
+              Мышление модели
+              {streamingReasoning && <span className="reasoning-pulse" />}
+              <span className="section-badge" style={{ marginLeft: 'auto' }}>
+                {Math.round(reasoning.length / 4)} ток.
+              </span>
+            </div>
+            {reasoningOpen && (
+              <div className="reasoning-body">
+                {reasoning}
+                {streamingReasoning && <span className="cursor" style={{ background: 'var(--text-muted)' }} />}
+                <div ref={reasoningEndRef} />
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Answer */}
         <div className="section" style={{ flex: 1 }}>
           <div className="section-header">Ответ</div>
           <div className="answer-body">
             {answer ? (
               <>
-                <span
-                  dangerouslySetInnerHTML={{ __html: renderMarkdownLite(answer) }}
-                />
+                <span dangerouslySetInnerHTML={{ __html: renderMarkdownLite(answer) }} />
                 {streaming && <span className="cursor" />}
               </>
             ) : (
               <span className="answer-placeholder">
-                Ответ появится здесь после распознавания вопроса…
+                {status === 'processing'
+                  ? 'Модель рассуждает…'
+                  : 'Ответ появится здесь после распознавания вопроса…'}
               </span>
             )}
             <div ref={answerEndRef} />
@@ -309,7 +336,7 @@ export default function Overlay() {
 
       </div>
 
-      {/* Bottom status bar */}
+      {/* Bottom bar */}
       <div className="bottom-bar">
         <span className="status-text">{statusText}</span>
         <span className="kbd">⌃⇧H</span>
