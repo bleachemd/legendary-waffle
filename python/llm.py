@@ -1,15 +1,22 @@
 """
-OpenRouter LLM connector — streams tokens from google/gemma-4-31b-it:free.
+OpenRouter LLM connector — google/gemma-4-31b-it:free with reasoning.
+
+Uses the OpenAI-compatible Python SDK pointed at OpenRouter.
+Streams two kinds of tokens:
+  reasoning_token — the model's internal thinking (shown collapsed in UI)
+  llm_token       — the actual answer visible to the candidate
+
+The last yielded event is always `turn_complete`, which carries the full
+assistant message (including reasoning_details). The caller must append it
+to the conversation history before the next turn so the model can continue
+reasoning from where it left off.
 """
 
 import os
 import sys
-import json
 from typing import Iterator
 
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
-API_URL  = "https://openrouter.ai/api/v1/chat/completions"
-MODEL    = "google/gemma-3-27b-it:free"
+MODEL = "google/gemma-4-31b-it:free"
 
 SYSTEM_PROMPT = (
     "Ты — ИИ-копилот на техническом собеседовании. "
@@ -21,74 +28,95 @@ SYSTEM_PROMPT = (
 )
 
 
-def stream_answer(question: str, context: str = "") -> Iterator[str]:
+def _get_client():
+    api_key = os.getenv("OPENROUTER_API_KEY", "")
+    if not api_key or api_key.startswith("sk-or-v1-replace"):
+        raise RuntimeError("OPENROUTER_API_KEY not set")
+
+    from openai import OpenAI  # type: ignore
+    return OpenAI(
+        base_url="https://openrouter.ai/api/v1",
+        api_key=api_key,
+        default_headers={
+            "HTTP-Referer": "https://interview-copilot.local",
+            "X-Title": "Interview Copilot",
+        },
+    )
+
+
+def make_system_message() -> dict:
+    return {"role": "system", "content": SYSTEM_PROMPT}
+
+
+def stream_answer(messages: list[dict]) -> Iterator[dict]:
     """
-    Generator that yields LLM tokens one by one.
-    Uses server-sent events (stream=true) to get sub-second first-token latency.
+    Generator — yields dicts in this order:
+
+      {"type": "reasoning_token", "token": str}   — zero or more
+      {"type": "llm_token",       "token": str}   — one or more
+      {"type": "turn_complete",   "assistant_message": dict}  — always last
+
+    The caller must append `assistant_message` to the conversation history
+    before the next call so reasoning context is preserved across turns.
     """
-    if not OPENROUTER_API_KEY:
-        yield "[Ошибка: OPENROUTER_API_KEY не задан]"
+    try:
+        client = _get_client()
+    except RuntimeError as exc:
+        yield {"type": "llm_token", "token": f"[Ошибка: {exc}]"}
+        yield {"type": "turn_complete", "assistant_message": {"role": "assistant", "content": ""}}
         return
 
-    user_message = question
-    if context:
-        user_message = (
-            f"Контекст из резюме/вакансии:\n{context}\n\n"
-            f"Вопрос интервьюера: {question}"
-        )
-
-    payload = {
-        "model": MODEL,
-        "stream": True,
-        "max_tokens": 512,
-        "temperature": 0.3,
-        "messages": [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": user_message},
-        ],
-    }
-
-    headers = {
-        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-        "Content-Type": "application/json",
-        "HTTP-Referer": "https://interview-copilot.local",
-        "X-Title": "Interview Copilot",
-    }
+    accumulated_reasoning = ""
+    accumulated_content = ""
 
     try:
-        import urllib.request
-
-        req = urllib.request.Request(
-            API_URL,
-            data=json.dumps(payload).encode(),
-            headers=headers,
-            method="POST",
+        stream = client.chat.completions.create(
+            model=MODEL,
+            messages=messages,
+            stream=True,
+            max_tokens=768,
+            temperature=0.3,
+            extra_body={
+                "reasoning": {
+                    # "high" gives the most thorough step-by-step thinking;
+                    # drop to "low" if first-token latency matters more than depth
+                    "effort": "high",
+                },
+            },
         )
 
-        with urllib.request.urlopen(req, timeout=60) as resp:
-            for raw_line in resp:
-                line = raw_line.decode("utf-8").strip()
+        for chunk in stream:
+            if not chunk.choices:
+                continue
+            delta = chunk.choices[0].delta
 
-                if not line or line == "data: [DONE]":
-                    continue
+            # reasoning tokens (model's internal monologue)
+            reasoning = getattr(delta, "reasoning", None)
+            if reasoning:
+                accumulated_reasoning += reasoning
+                yield {"type": "reasoning_token", "token": reasoning}
 
-                if line.startswith("data: "):
-                    line = line[6:]
-
-                try:
-                    event = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-
-                choices = event.get("choices", [])
-                if not choices:
-                    continue
-
-                delta = choices[0].get("delta", {})
-                token = delta.get("content", "")
-                if token:
-                    yield token
+            # answer tokens
+            if delta.content:
+                accumulated_content += delta.content
+                yield {"type": "llm_token", "token": delta.content}
 
     except Exception as exc:
-        print(f"[llm] error: {exc}", file=sys.stderr)
-        yield f"\n[Ошибка запроса: {exc}]"
+        print(f"[llm] stream error: {exc}", file=sys.stderr)
+        error_text = f"\n[Ошибка: {exc}]"
+        accumulated_content += error_text
+        yield {"type": "llm_token", "token": error_text}
+
+    # Build the assistant message to hand back for history preservation.
+    # reasoning_details must survive into the next turn so the model can
+    # continue reasoning from where it left off (per OpenRouter docs).
+    assistant_message: dict = {
+        "role": "assistant",
+        "content": accumulated_content,
+    }
+    if accumulated_reasoning:
+        assistant_message["reasoning_details"] = [
+            {"type": "thinking", "thinking": accumulated_reasoning}
+        ]
+
+    yield {"type": "turn_complete", "assistant_message": assistant_message}

@@ -1,0 +1,43 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "8765:8765"
+    env_file:
+      - .env
+    environment:
+      WS_MODE: "true"
+      WS_HOST: "0.0.0.0"
+      WS_PORT: "8765"
+    volumes:
+      # hot-reload python code without rebuilding the image
+      - ./python:/app/python:ro
+      # persist the sentence-transformers model cache between restarts
+      - model-cache:/root/.cache
+
+    # ── Audio device passthrough (Linux only) ─────────────────────────────
+    # This gives the container access to the host's sound card.
+    # On macOS or Windows, audio capture must run on the host — remove
+    # the two blocks below and rely on the loopback from Electron instead.
+    devices:
+      - /dev/snd:/dev/snd
+    group_add:
+      - audio
+    # PulseAudio socket so soundcard can reach the host PA daemon
+    # Comment out if you're not using PulseAudio (e.g. PipeWire handles it)
+    # volumes:
+    #   - /run/user/1000/pulse:/run/user/1000/pulse
+
+    healthcheck:
+      # nc (netcat) checks whether the WebSocket port is open
+      test: ["CMD-SHELL", "python3 -c \"import socket; s=socket.socket(); s.connect(('localhost',8765)); s.close()\" 2>/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+volumes:
+  model-cache:

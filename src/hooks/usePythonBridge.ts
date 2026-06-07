@@ -5,6 +5,7 @@ import { useEffect, useCallback } from 'react'
 
 export type PythonMessage =
   | { type: 'transcript'; speaker: 'mic' | 'speaker'; text: string; final: boolean }
+  | { type: 'reasoning_token'; token: string }
   | { type: 'llm_token'; token: string }
   | { type: 'llm_done' }
   | { type: 'status'; text: string }

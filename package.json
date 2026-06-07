@@ -13,14 +13,17 @@
   },
   "dependencies": {
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "ws": "^8.17.1"
   },
   "devDependencies": {
     "@types/node": "^20.14.0",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
+    "@types/ws": "^8.5.10",
     "@vitejs/plugin-react": "^4.3.0",
     "concurrently": "^8.2.2",
+    "dotenv": "^16.4.5",
     "electron": "^31.0.0",
     "electron-builder": "^24.13.3",
     "typescript": "^5.4.5",
