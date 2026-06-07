@@ -9,6 +9,9 @@ All message framing is identical in both modes: newline-delimited JSON objects
 with a `type` field, so the Electron side doesn't need to know which mode is active.
 """
 
+import warnings
+warnings.filterwarnings("ignore", message="pkg_resources is deprecated")
+
 import os
 import sys
 import json

@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "concurrently \"npm:dev:vite\" \"npm:dev:electron\"",
     "dev:vite": "vite",
-    "dev:electron": "wait-on http://localhost:5173 && npm run build:electron && DISPLAY=${DISPLAY:-:99} electron .",
+    "dev:electron": "wait-on http://localhost:5173 && npm run build:electron && DISPLAY=${DISPLAY:-:99} DBUS_SESSION_BUS_ADDRESS=disabled: electron . --no-sandbox --disable-gpu --disable-software-rasterizer --disable-dev-shm-usage",
     "build": "npm run build:electron && vite build && electron-builder",
     "build:electron": "tsc -p tsconfig.electron.json",
     "preview": "vite preview",
