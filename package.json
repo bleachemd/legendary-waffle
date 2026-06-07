@@ -4,12 +4,13 @@
   "description": "Stealth AI interview assistant",
   "main": "dist-electron/main.js",
   "scripts": {
-    "dev": "concurrently \"vite\" \"electron-builder --config --watch\" \"wait-on http://localhost:5173 && electron .\"",
+    "dev": "concurrently \"npm:dev:vite\" \"npm:dev:electron\"",
     "dev:vite": "vite",
-    "dev:electron": "wait-on http://localhost:5173 && electron .",
-    "build": "tsc && vite build && electron-builder",
+    "dev:electron": "wait-on http://localhost:5173 && npm run build:electron && DISPLAY=${DISPLAY:-:99} electron .",
+    "build": "npm run build:electron && vite build && electron-builder",
     "build:electron": "tsc -p tsconfig.electron.json",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "xvfb": "Xvfb :99 -screen 0 1280x900x24 &"
   },
   "dependencies": {
     "react": "^18.3.1",
