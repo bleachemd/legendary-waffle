@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "concurrently \"npm:dev:vite\" \"npm:dev:electron\"",
     "dev:vite": "vite",
-    "dev:electron": "wait-on http://localhost:5173 && npm run build:electron && DISPLAY=${DISPLAY:-:99} DBUS_SESSION_BUS_ADDRESS=disabled: electron . --no-sandbox --disable-gpu --disable-software-rasterizer --disable-dev-shm-usage",
+    "dev:electron": "wait-on http://localhost:5173 && npm run build:electron && env -u ELECTRON_RUN_AS_NODE DISPLAY=${DISPLAY:-:99} DBUS_SESSION_BUS_ADDRESS=disabled: electron . --no-sandbox --disable-gpu --disable-software-rasterizer --disable-dev-shm-usage",
     "build": "npm run build:electron && vite build && electron-builder",
     "build:electron": "tsc -p tsconfig.electron.json",
     "preview": "vite preview",
@@ -25,7 +25,7 @@
     "@vitejs/plugin-react": "^4.3.0",
     "concurrently": "^8.2.2",
     "dotenv": "^16.4.5",
-    "electron": "^31.0.0",
+    "electron": "^31.7.7",
     "electron-builder": "^24.13.3",
     "typescript": "^5.4.5",
     "vite": "^5.3.1",
