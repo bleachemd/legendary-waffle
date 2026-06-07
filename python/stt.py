@@ -55,7 +55,10 @@ class STTEngine:
 
     def _process_loop(self, speaker: str):
         try:
-            import webrtcvad  # type: ignore
+            import warnings
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", message="pkg_resources is deprecated")
+                import webrtcvad  # type: ignore
             vad = webrtcvad.Vad(2)   # aggressiveness 0-3; 2 is a good middle ground
             has_vad = True
         except ImportError:
